@@ -87,6 +87,7 @@ export const App: React.FC = () => {
       showToast('success', `Scenario launched: ${response.summary?.primaryRootCause || 'Investigation Complete'}`);
     } catch (err: any) {
       showToast('error', `Failed to run scenario: ${err.message}`);
+      throw err;
     } finally {
       setIsLoading(false);
     }

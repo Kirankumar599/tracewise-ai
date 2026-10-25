@@ -80,6 +80,18 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(resp);
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        ErrorResponse resp = new ErrorResponse(
+                "RESOURCE_NOT_FOUND",
+                "Endpoint not found: /" + ex.getResourcePath(),
+                LocalDateTime.now(),
+                HttpStatus.NOT_FOUND.value(),
+                Collections.emptyList()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(resp);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGenericException(Exception ex) {
         log.error("Unhandled internal server exception", ex);

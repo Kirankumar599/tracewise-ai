@@ -19,9 +19,11 @@ interface MetricsChartsViewProps {
 
 export const MetricsChartsView: React.FC<MetricsChartsViewProps> = ({
   metrics,
-  initialSelectedService
+  initialSelectedService: _initialSelectedService
 }) => {
   const [selectedMetricType, setSelectedMetricType] = useState<'latency' | 'cpu' | 'errors' | 'connections'>('latency');
+  const allServices = Array.from(new Set((metrics || []).map(m => m.name)));
+  const [activeServices, setActiveServices] = useState<string[]>(allServices);
 
   if (!metrics || metrics.length === 0) {
     return (
@@ -30,10 +32,6 @@ export const MetricsChartsView: React.FC<MetricsChartsViewProps> = ({
       </div>
     );
   }
-
-  // Extract unique services
-  const allServices = Array.from(new Set(metrics.map(m => m.name)));
-  const [activeServices, setActiveServices] = useState<string[]>(allServices);
 
   // Colors for multi-line overlay
   const serviceColors: Record<string, string> = {

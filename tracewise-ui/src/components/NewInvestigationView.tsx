@@ -8,8 +8,7 @@ import {
   CheckCircle2,
   Play,
   ArrowRight,
-  Loader2,
-  FileText
+  Loader2
 } from 'lucide-react';
 import { IncidentRequest } from '../types/incident';
 

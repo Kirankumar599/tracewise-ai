@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
-  RootCauseHypothesis,
-  EvidenceItem
+  RootCauseHypothesis
 } from '../types/incident';
 import {
   ShieldCheck,

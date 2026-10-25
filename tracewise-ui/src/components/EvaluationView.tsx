@@ -1,13 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { EvaluationResult } from '../types/incident';
-import { ApiClient } from '../services/api';
 import {
   BarChart3,
   CheckCircle2,
-  XCircle,
-  AlertTriangle,
   RefreshCw,
-  ShieldCheck,
   Info,
   Check,
   Target,

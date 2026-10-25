@@ -9,7 +9,6 @@ import {
   ArrowRight,
   ShieldAlert,
   CheckCircle2,
-  Clock,
   Radio,
   Sparkles
 } from 'lucide-react';

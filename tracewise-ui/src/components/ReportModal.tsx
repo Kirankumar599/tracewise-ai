@@ -4,8 +4,7 @@ import {
   Download,
   Copy,
   Check,
-  FileText,
-  Share2
+  FileText
 } from 'lucide-react';
 import { IncidentResponse } from '../types/incident';
 

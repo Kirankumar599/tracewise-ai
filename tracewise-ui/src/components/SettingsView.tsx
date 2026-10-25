@@ -6,10 +6,8 @@ import {
   Layers,
   Shield,
   FileCode,
-  Info,
   CheckCircle2,
-  AlertTriangle,
-  ExternalLink
+  AlertTriangle
 } from 'lucide-react';
 
 interface SettingsViewProps {

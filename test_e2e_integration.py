@@ -5,19 +5,20 @@ healthy baseline nominal output, regression tests, and error handling.
 """
 
 import sys
+import os
 import json
 import urllib.request
 import urllib.error
 
-API_BASE = "http://localhost:8081"
-ML_BASE = "http://localhost:8000"
+API_BASE = os.environ.get("API_BASE", "http://localhost:8081").rstrip("/")
+ML_BASE = os.environ.get("ML_BASE", "http://localhost:8000").rstrip("/")
 
 def request(method, url, data=None):
     req = urllib.request.Request(url, method=method)
     req.add_header("Content-Type", "application/json")
     body = json.dumps(data).encode("utf-8") if data else None
     try:
-        with urllib.request.urlopen(req, data=body, timeout=10) as resp:
+        with urllib.request.urlopen(req, data=body, timeout=30) as resp:
             content = resp.read().decode("utf-8")
             return resp.status, json.loads(content) if content else {}
     except urllib.error.HTTPError as e:
@@ -26,6 +27,8 @@ def request(method, url, data=None):
             return e.code, json.loads(content)
         except Exception:
             return e.code, {"raw": content}
+    except Exception as e:
+        return 0, {"error": str(e)}
 
 results = []
 

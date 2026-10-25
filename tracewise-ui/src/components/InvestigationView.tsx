@@ -10,14 +10,11 @@ import { AffectedServicesTable } from './AffectedServicesTable';
 import {
   ShieldAlert,
   Clock,
-  Radio,
   FileText,
   Layers,
   Activity,
   AlertTriangle,
-  GitBranch,
-  Terminal,
-  Share2
+  GitBranch
 } from 'lucide-react';
 
 interface InvestigationViewProps {

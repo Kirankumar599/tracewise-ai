@@ -8,11 +8,7 @@ import {
   Database,
   Globe,
   Radio,
-  Layers,
-  AlertTriangle,
-  CheckCircle2,
-  AlertOctagon,
-  Info
+  Layers
 } from 'lucide-react';
 
 interface DependencyGraphViewProps {
@@ -72,8 +68,72 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
       const step = svgHeight / (count + 1);
       const y = (idx + 1) * step;
       nodePositions[node.id] = { x, y };
+      nodePositions[node.id.toLowerCase().trim()] = { x, y };
+      if (node.name) {
+        nodePositions[node.name.toLowerCase().trim()] = { x, y };
+      }
     });
   });
+
+  const getNodePos = (id: string) => {
+    if (!id) return undefined;
+    if (nodePositions[id]) return nodePositions[id];
+    const normalized = id.toLowerCase().trim();
+    if (nodePositions[normalized]) return nodePositions[normalized];
+    const matchKey = Object.keys(nodePositions).find(k => k.toLowerCase().trim() === normalized);
+    return matchKey ? nodePositions[matchKey] : undefined;
+  };
+
+  // Derive inferred edges if telemetry or upload contained no explicit dependency edges
+  const rawEdges = graph.edges || [];
+  let effectiveEdges = [...rawEdges];
+  const hasInferredEdges = effectiveEdges.length === 0 && graph.nodes.length > 1;
+
+  if (hasInferredEdges) {
+    const gateways = graph.nodes.filter(n => n.tier === 'GATEWAY');
+    const services = graph.nodes.filter(n => n.tier === 'SERVICE');
+    const backends = graph.nodes.filter(n => ['DATABASE', 'CACHE', 'EXTERNAL'].includes(n.tier));
+
+    gateways.forEach(gw => {
+      services.forEach(svc => {
+        effectiveEdges.push({
+          from: gw.id,
+          to: svc.id,
+          status: svc.status === 'FAILING' ? 'BLOCKED' : 'NORMAL',
+          errorRate: svc.status === 'FAILING' ? 18.0 : 0.0,
+          latencyMs: svc.status === 'FAILING' ? 850.0 : 35.0,
+          isCriticalPath: svc.isRootCause
+        });
+      });
+    });
+
+    services.forEach(svc => {
+      backends.forEach(backend => {
+        const isCrit = backend.isRootCause || backend.status === 'FAILING';
+        effectiveEdges.push({
+          from: svc.id,
+          to: backend.id,
+          status: isCrit ? 'BLOCKED' : 'NORMAL',
+          errorRate: isCrit ? 28.0 : 0.0,
+          latencyMs: isCrit ? 1400.0 : 40.0,
+          isCriticalPath: isCrit
+        });
+      });
+    });
+
+    if (effectiveEdges.length === 0) {
+      for (let i = 0; i < graph.nodes.length - 1; i++) {
+        effectiveEdges.push({
+          from: graph.nodes[i].id,
+          to: graph.nodes[i + 1].id,
+          status: 'NORMAL',
+          errorRate: 0.0,
+          latencyMs: 45.0,
+          isCriticalPath: false
+        });
+      }
+    }
+  }
 
   const getNodeIcon = (tier: string) => {
     switch (tier) {
@@ -127,7 +187,8 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
           <h3 className="font-semibold text-white flex items-center gap-2">
             <span>Service Dependency Impact Graph</span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-midnight-800 text-slate-400 font-mono">
-              {graph.nodes.length} Services • {graph.edges.length} Edges
+              {graph.nodes.length} Services • {effectiveEdges.length} Edges
+              {hasInferredEdges && <span className="ml-1.5 text-brand-cyan font-sans text-[10px] bg-brand-cyan/10 px-1.5 py-0.5 rounded border border-brand-cyan/20">Inferred Topology</span>}
             </span>
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
@@ -204,9 +265,9 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
           <line x1="520" y1="40" x2="520" y2="420" stroke="#1E293B" strokeDasharray="4 4" />
 
           {/* Edges */}
-          {graph.edges.map((edge, idx) => {
-            const fromPos = nodePositions[edge.from];
-            const toPos = nodePositions[edge.to];
+          {effectiveEdges.map((edge, idx) => {
+            const fromPos = getNodePos(edge.from);
+            const toPos = getNodePos(edge.to);
             if (!fromPos || !toPos) return null;
 
             const isCritical = edge.isCriticalPath || edge.status === 'BLOCKED';
@@ -268,7 +329,7 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
             if (!pos) return null;
 
             const isRoot = node.isRootCause || node.id === primaryRootCauseService;
-            const style = getStatusColor(node.status, isRoot);
+            const _style = getStatusColor(node.status, isRoot);
             const isSelected = selectedNodeId === node.id;
 
             return (

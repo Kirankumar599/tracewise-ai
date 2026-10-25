@@ -6,7 +6,6 @@ import {
   FileText,
   AlertTriangle,
   Clock,
-  Filter,
   Flame
 } from 'lucide-react';
 

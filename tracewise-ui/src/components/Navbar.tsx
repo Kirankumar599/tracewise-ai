@@ -3,10 +3,8 @@ import {
   Activity,
   Layers,
   Search,
-  CheckCircle2,
   AlertTriangle,
   PlayCircle,
-  FileText,
   BarChart3,
   Server,
   Cpu

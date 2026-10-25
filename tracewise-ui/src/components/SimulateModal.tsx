@@ -6,9 +6,11 @@ import {
   Globe,
   ArrowRight,
   ShieldAlert,
-  CheckCircle,
+  Check,
   Sparkles,
-  Loader2
+  Loader2,
+  Play,
+  AlertCircle
 } from 'lucide-react';
 import { ScenarioCatalogItem } from '../types/incident';
 
@@ -28,6 +30,8 @@ export const SimulateModal: React.FC<SimulateModalProps> = ({
   isLoading
 }) => {
   const [selectedId, setSelectedId] = useState<string>('db-pool-exhaustion');
+  const [executingId, setExecutingId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -94,7 +98,7 @@ export const SimulateModal: React.FC<SimulateModalProps> = ({
       return <Globe className="w-5 h-5 text-brand-cyan" />;
     }
     if (lower.includes('healthy')) {
-      return <CheckCircle className="w-5 h-5 text-brand-emerald" />;
+      return <Check className="w-5 h-5 text-brand-emerald" />;
     }
     if (lower.includes('mem') || lower.includes('heap')) {
       return <ShieldAlert className="w-5 h-5 text-brand-rose" />;
@@ -102,78 +106,184 @@ export const SimulateModal: React.FC<SimulateModalProps> = ({
     return <Database className="w-5 h-5 text-brand-cyan" />;
   };
 
-  const handleRun = async () => {
-    await onSelectScenario(selectedId);
-    onClose();
+  const isBusy = isLoading || executingId !== null;
+
+  const handleExecuteScenario = async (targetId?: string) => {
+    const scenarioIdToRun = targetId || selectedId;
+    if (!scenarioIdToRun || isBusy) return;
+
+    setErrorMessage(null);
+    setExecutingId(scenarioIdToRun);
+    try {
+      await onSelectScenario(scenarioIdToRun);
+      onClose();
+    } catch (err: any) {
+      console.error('Simulation execution error:', err);
+      setErrorMessage(err.message || 'Failed to execute incident simulation against backend API.');
+    } finally {
+      setExecutingId(null);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-midnight-950/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-2xl bg-midnight-900 border border-midnight-700/80 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-midnight-950/85 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-2xl bg-midnight-900 border border-midnight-700/80 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-midnight-800 bg-midnight-850">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-midnight-800 bg-midnight-850 shrink-0">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-brand-cyan/10 border border-brand-cyan/20 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-brand-cyan" />
             </div>
             <div>
               <h2 className="text-lg font-semibold text-white">Simulate Cascading Incident</h2>
-              <p className="text-xs text-slate-400">Select a deterministic scenario with isolated ground truth</p>
+              <p className="text-xs text-slate-400">Select and launch a deterministic scenario with isolated ground truth</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-midnight-800 transition-colors"
+            disabled={isBusy}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-midnight-800 transition-colors disabled:opacity-40"
+            aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-5">
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
           <p className="text-sm text-slate-300">
             Each scenario generates real, deterministic, timestamped multi-service telemetry, logs, and topology edges.
             The diagnostic engine receives <span className="text-brand-cyan font-medium">zero ground-truth answers</span> in its input.
           </p>
 
+          {/* Inline Error Banner */}
+          {errorMessage && (
+            <div className="p-4 rounded-xl bg-brand-rose/10 border border-brand-rose/30 flex items-start gap-3 text-xs text-brand-rose animate-in slide-in-from-top-1 duration-150">
+              <AlertCircle className="w-5 h-5 shrink-0 text-brand-rose mt-0.5" />
+              <div className="flex-1">
+                <div className="font-semibold text-sm">Simulation Request Failed</div>
+                <p className="mt-1 text-slate-300 leading-relaxed font-mono text-[11px]">{errorMessage}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleExecuteScenario(selectedId)}
+                  className="px-3 py-1.5 rounded-lg bg-brand-rose text-white font-semibold text-xs hover:bg-rose-600 transition-colors shadow-sm"
+                >
+                  Retry
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setErrorMessage(null)}
+                  className="px-2 py-1.5 rounded-lg text-slate-400 hover:text-white transition-colors"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Scenario Selection Grid */}
-          <div className="space-y-3">
+          <div className="space-y-3" role="radiogroup" aria-label="Available failure scenarios">
             {activeCatalog.map((scenario) => {
               const isSelected = selectedId === scenario.id;
+              const isCurrentlyExecuting = executingId === scenario.id;
+
               return (
                 <div
                   key={scenario.id}
-                  onClick={() => setSelectedId(scenario.id)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                  role="radio"
+                  aria-checked={isSelected}
+                  tabIndex={0}
+                  onClick={() => {
+                    if (!isBusy) {
+                      setSelectedId(scenario.id);
+                      setErrorMessage(null);
+                    }
+                  }}
+                  onDoubleClick={() => {
+                    if (!isBusy) {
+                      setSelectedId(scenario.id);
+                      handleExecuteScenario(scenario.id);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !isBusy) {
+                      e.preventDefault();
+                      setSelectedId(scenario.id);
+                      setErrorMessage(null);
+                    }
+                  }}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer relative select-none ${
                     isSelected
-                      ? 'bg-midnight-800/90 border-brand-cyan shadow-lg shadow-brand-cyan/10 ring-1 ring-brand-cyan/30'
-                      : 'bg-midnight-850 border-midnight-800 hover:border-midnight-700 hover:bg-midnight-800/50'
-                  }`}
+                      ? 'bg-midnight-800/95 border-brand-cyan shadow-xl shadow-brand-cyan/15 ring-2 ring-brand-cyan/40 scale-[1.008]'
+                      : 'bg-midnight-850 border-midnight-800 hover:border-midnight-700 hover:bg-midnight-800/60'
+                  } ${isBusy ? 'pointer-events-none opacity-80' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2.5 rounded-xl bg-midnight-950 border border-midnight-800">
+                    <div className="flex items-start gap-3">
+                      <div className={`p-2.5 rounded-xl border mt-0.5 ${
+                        isSelected ? 'bg-midnight-950 border-brand-cyan/40 shadow-sm' : 'bg-midnight-950 border-midnight-800'
+                      }`}>
                         {getIcon(scenario.id)}
                       </div>
                       <div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold text-sm text-white">{scenario.title}</h3>
                           <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono uppercase ${
                             scenario.severity === 'CRITICAL'
-                              ? 'bg-brand-rose/10 text-brand-rose border border-brand-rose/20'
-                              : 'bg-brand-amber/10 text-brand-amber border border-brand-amber/20'
+                              ? 'bg-brand-rose/15 text-brand-rose border border-brand-rose/30 font-semibold'
+                              : 'bg-brand-amber/15 text-brand-amber border border-brand-amber/30 font-semibold'
                           }`}>
                             {scenario.severity}
                           </span>
+                          {isSelected && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-mono uppercase bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40 font-bold">
+                              Selected
+                            </span>
+                          )}
                         </div>
-                        <p className="text-xs text-slate-400 mt-1 leading-relaxed">{scenario.description}</p>
+                        <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">{scenario.description}</p>
                       </div>
                     </div>
-                    <div className="mt-1">
-                      <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${
-                        isSelected ? 'border-brand-cyan bg-brand-cyan text-midnight-950' : 'border-midnight-600'
+
+                    {/* Radio and Action Button */}
+                    <div className="flex items-center gap-2.5 shrink-0 mt-0.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(scenario.id);
+                          handleExecuteScenario(scenario.id);
+                        }}
+                        disabled={isBusy}
+                        className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                          isSelected
+                            ? 'bg-brand-cyan hover:bg-cyan-300 text-midnight-950 shadow-md shadow-brand-cyan/25'
+                            : 'bg-midnight-800 hover:bg-midnight-750 text-slate-300 border border-midnight-700'
+                        } disabled:opacity-50`}
+                      >
+                        {isCurrentlyExecuting ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Simulating...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Run</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* Radio indicator */}
+                      <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${
+                        isSelected
+                          ? 'border-brand-cyan bg-brand-cyan text-midnight-950 shadow-sm shadow-brand-cyan/40'
+                          : 'border-midnight-600 bg-midnight-950'
                       }`}>
-                        {isSelected && <CheckCircle className="w-3 h-3 stroke-[3]" />}
+                        {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                       </div>
                     </div>
                   </div>
@@ -198,27 +308,30 @@ export const SimulateModal: React.FC<SimulateModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-midnight-800 bg-midnight-850 flex items-center justify-between">
+        <div className="px-6 py-4 border-t border-midnight-800 bg-midnight-850 flex items-center justify-between shrink-0">
           <button
+            type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-midnight-800 transition-colors"
+            disabled={isBusy}
+            className="px-4 py-2 rounded-xl text-sm font-medium text-slate-400 hover:text-white hover:bg-midnight-800 transition-colors disabled:opacity-40"
           >
             Cancel
           </button>
           <button
-            onClick={handleRun}
-            disabled={isLoading}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-cyan to-brand-turquoise hover:from-cyan-400 hover:to-teal-400 text-midnight-950 font-semibold text-sm shadow-lg shadow-brand-cyan/20 transition-all disabled:opacity-50"
+            type="button"
+            onClick={() => handleExecuteScenario(selectedId)}
+            disabled={isBusy}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-brand-cyan to-brand-turquoise hover:from-cyan-400 hover:to-teal-400 text-midnight-950 font-bold text-sm shadow-lg shadow-brand-cyan/25 transition-all disabled:opacity-50"
           >
-            {isLoading ? (
+            {isBusy ? (
               <>
                 <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Running Anomaly Engine...</span>
+                <span>Running Anomaly Engine & Diagnosis...</span>
               </>
             ) : (
               <>
                 <span>Launch Investigation</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight className="w-4 h-4 stroke-[2.5]" />
               </>
             )}
           </button>

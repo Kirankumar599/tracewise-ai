@@ -1,0 +1,8 @@
+timestamp,service,cpu_percent,latency_ms,error_rate,active_connections,pool_utilization,metric_name,observed_value,expected_baseline,unit
+2026-10-25T12:00:00,external-payment-gateway,35,2400,8.0,12,24,LATENCY,2400,250,ms
+2026-10-25T12:00:00,payment-service,42,620,3.0,18,36,LATENCY,620,200,ms
+2026-10-25T12:01:00,order-service,39,900,6.0,22,44,LATENCY,900,220,ms
+2026-10-25T12:02:00,api-gateway,31,1600,11.0,25,25,LATENCY,1600,150,ms
+2026-10-25T12:02:00,external-payment-gateway,38,3100,15.0,14,28,LATENCY,3100,250,ms
+2026-10-25T12:03:00,payment-service,50,1450,10.0,21,42,LATENCY,1450,200,ms
+2026-10-25T12:04:00,api-gateway,34,2200,18.0,28,28,LATENCY,2200,150,ms

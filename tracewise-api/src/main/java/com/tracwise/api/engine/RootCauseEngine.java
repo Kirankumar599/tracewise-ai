@@ -149,8 +149,8 @@ public class RootCauseEngine {
             Set<String> dependents = incomingDeps.getOrDefault(sName, Collections.emptySet());
             String lower = sName.toLowerCase();
             boolean isDatabaseTier = lower.contains("db") || lower.contains("postgres") || lower.contains("sql") || lower.contains("mongo");
-            boolean isIngressGateway = lower.contains("gateway") || lower.contains("router") || lower.contains("ingress") || lower.contains("frontend") || lower.contains("web");
             boolean isExternalProvider = lower.contains("external") || lower.contains("shipping") || lower.contains("carrier") || lower.contains("third-party") || lower.contains("partner");
+            boolean isIngressGateway = !isExternalProvider && (lower.contains("gateway") || lower.contains("router") || lower.contains("ingress") || lower.contains("frontend") || lower.contains("web"));
             boolean isLeafDownstream = outgoingDeps.getOrDefault(sName, Collections.emptySet()).isEmpty() && !dependents.isEmpty();
 
             // Check A: Database Connection Pool Exhaustion
@@ -384,6 +384,25 @@ public class RootCauseEngine {
                             15.0,
                             "Dependency topology"
                     ));
+
+                    LocalDateTime sOnset = firstAnomalyTime.get(sName);
+                    if (sOnset != null) {
+                        LocalDateTime earliestDepOnset = dependents.stream()
+                                .map(firstAnomalyTime::get)
+                                .filter(Objects::nonNull)
+                                .min(LocalDateTime::compareTo)
+                                .orElse(null);
+                        if (earliestDepOnset != null && sOnset.isBefore(earliestDepOnset)) {
+                            score += 15.0;
+                            supporting.add(new EvidenceItem(
+                                    "TEMPORAL_ORDER",
+                                    String.format("%s degradation onset at %s preceded dependent caller degradation at %s",
+                                            sName, sOnset, earliestDepOnset),
+                                    15.0,
+                                    "Timeline analysis"
+                            ));
+                        }
+                    }
                 }
 
                 for (ChangeEvent c : recentChanges) {
@@ -577,14 +596,15 @@ if (candidates.isEmpty()) {
 
             String tier = "SERVICE";
             String lowerS = sName.toLowerCase();
-            if (lowerS.contains("gateway") || lowerS.contains("edge") || lowerS.contains("portal") || lowerS.contains("router")) {
-                tier = "GATEWAY";
+            boolean isExternalS = lowerS.contains("external") || lowerS.contains("shipping") || lowerS.contains("carrier") || lowerS.contains("third-party") || lowerS.contains("partner");
+            if (isExternalS) {
+                tier = "EXTERNAL";
             } else if (lowerS.contains("db") || lowerS.contains("postgres") || lowerS.contains("sql") || lowerS.contains("mongo")) {
                 tier = "DATABASE";
             } else if (lowerS.contains("cache") || lowerS.contains("redis")) {
                 tier = "CACHE";
-            } else if (lowerS.contains("external") || lowerS.contains("shipping") || lowerS.contains("third-party")) {
-                tier = "EXTERNAL";
+            } else if (lowerS.contains("gateway") || lowerS.contains("edge") || lowerS.contains("portal") || lowerS.contains("router") || lowerS.contains("ingress") || lowerS.contains("frontend") || lowerS.contains("web")) {
+                tier = "GATEWAY";
             }
 
             nodes.add(new GraphNode(

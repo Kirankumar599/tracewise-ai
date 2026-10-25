@@ -154,4 +154,61 @@ public class TelemetryParserTest {
         assertEquals(0.001, m.errorRate(), 0.0001);
         assertEquals(100, m.connectionPoolLimit());
     }
+
+    @Test
+    void testCascadingLatencyCsvAnalysisIdentifiesExternalPaymentGateway() throws Exception {
+        File csvFile = new File("../sample-data/03_cascading_latency.csv");
+        if (!csvFile.exists()) {
+            csvFile = new File("sample-data/03_cascading_latency.csv");
+        }
+        assertTrue(csvFile.exists(), "03_cascading_latency.csv must exist in sample-data");
+
+        IncidentRequest request;
+        try (InputStream in = new FileInputStream(csvFile)) {
+            request = telemetryParser.parseCsv(in);
+        }
+
+        assertNotNull(request);
+        assertEquals(7, request.services().size(), "All 7 rows in 03_cascading_latency.csv must be parsed");
+
+        EngineAnalysisResult result = rootCauseEngine.analyze(
+                request.incidentId(),
+                request.services(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        assertNotNull(result);
+        assertFalse(result.hypotheses().isEmpty(), "Must produce candidate hypothesis");
+
+        // Primary root cause must be external-payment-gateway, NOT api-gateway fallback
+        assertEquals("external-payment-gateway", result.summary().primaryAffectedService());
+        assertEquals("external-payment-gateway", result.hypotheses().get(0).suspectedService());
+        assertEquals("UPSTREAM_TIMEOUT", result.hypotheses().get(0).rootCauseCategory());
+        assertTrue(result.hypotheses().get(0).evidenceScore() >= 80.0, "Score must be high confidence (>= 80%)");
+
+        // Dependency graph node tiers
+        var nodes = result.dependencyGraph().nodes();
+        var extNode = nodes.stream().filter(n -> n.id().equals("external-payment-gateway")).findFirst().orElseThrow();
+        assertEquals("EXTERNAL", extNode.tier(), "external-payment-gateway must have EXTERNAL tier");
+
+        var gwNode = nodes.stream().filter(n -> n.id().equals("api-gateway")).findFirst().orElseThrow();
+        assertEquals("GATEWAY", gwNode.tier(), "api-gateway must have GATEWAY tier");
+
+        var payNode = nodes.stream().filter(n -> n.id().equals("payment-service")).findFirst().orElseThrow();
+        assertEquals("SERVICE", payNode.tier(), "payment-service must have SERVICE tier");
+
+        // Inferred topology edge directions: external-payment-gateway must be target (sink), not source
+        assertTrue(result.dependencyGraph().inferredTopology(), "Topology must be flagged inferred");
+        boolean hasOutgoingFromExternal = result.dependencyGraph().edges().stream()
+                .anyMatch(e -> e.from().equals("external-payment-gateway"));
+        assertFalse(hasOutgoingFromExternal, "external-payment-gateway must not be treated as ingress gateway");
+
+        boolean hasIncomingToExternal = result.dependencyGraph().edges().stream()
+                .anyMatch(e -> e.to().equals("external-payment-gateway"));
+        assertTrue(hasIncomingToExternal, "Application services must connect to external provider");
+    }
 }
+

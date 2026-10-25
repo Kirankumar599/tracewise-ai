@@ -14,3 +14,25 @@ services:
         value: 8000
       - key: ENVIRONMENT
         value: production
+
+  # TraceWise AI - Spring Boot API & Root-Cause Engine
+  - type: web
+    name: tracewise-api
+    runtime: docker
+    rootDir: tracewise-api
+    dockerfilePath: Dockerfile
+    plan: free
+    region: oregon
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: PORT
+        value: 8081
+      - key: ML_SERVICE_URL
+        value: https://tracewise-ml.onrender.com
+      - key: ML_CONNECT_TIMEOUT_MS
+        value: 10000
+      - key: ML_READ_TIMEOUT_MS
+        value: 60000
+      - key: CORS_ALLOWED_ORIGINS
+        value: http://localhost:5173

@@ -158,4 +158,44 @@ class IncidentControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode", is("RESOURCE_NOT_FOUND")));
     }
+
+    @Test
+    void testUploadSyntheticIncidentTelemetryCsv() throws Exception {
+        java.io.File file = new java.io.File("../sample-data/tracewise-synthetic-incident-telemetry.csv");
+        if (!file.exists()) {
+            file = new java.io.File("sample-data/tracewise-synthetic-incident-telemetry.csv");
+        }
+        byte[] csvBytes = java.nio.file.Files.readAllBytes(file.toPath());
+        org.springframework.mock.web.MockMultipartFile multipartFile = new org.springframework.mock.web.MockMultipartFile(
+                "file",
+                "tracewise-synthetic-incident-telemetry.csv",
+                "text/csv",
+                csvBytes
+        );
+
+        mockMvc.perform(multipart("/api/v1/incidents/upload").file(multipartFile))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", is("ANALYZED")))
+                .andExpect(jsonPath("$.summary.primaryAffectedService", is("postgres-db")))
+                .andExpect(jsonPath("$.hypotheses[0].suspectedService", is("postgres-db")))
+                .andExpect(jsonPath("$.hypotheses[0].rootCauseCategory", is("DATABASE_EXHAUSTION")))
+                .andExpect(jsonPath("$.dependencyGraph.inferredTopology", is(true)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'postgres-db')].peakCpuPercent", contains(76.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'postgres-db')].peakLatencyMs", contains(320.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'postgres-db')].peakErrorRate", contains(15.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'postgres-db')].maxActiveConnections", contains(100)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'postgres-db')].connectionPoolLimit", contains(100)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'order-service')].peakLatencyMs", contains(1800.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'order-service')].peakErrorRate", contains(18.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'order-service')].maxActiveConnections", contains(48)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'order-service')].connectionPoolLimit", contains(50)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'payment-service')].peakLatencyMs", contains(1450.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'payment-service')].peakErrorRate", contains(9.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'payment-service')].maxActiveConnections", contains(44)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'payment-service')].connectionPoolLimit", contains(50)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'api-gateway')].peakLatencyMs", contains(2100.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'api-gateway')].peakErrorRate", contains(24.0)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'api-gateway')].maxActiveConnections", contains(160)))
+                .andExpect(jsonPath("$.affectedServices[?(@.serviceName == 'api-gateway')].connectionPoolLimit", contains(200)));
+    }
 }

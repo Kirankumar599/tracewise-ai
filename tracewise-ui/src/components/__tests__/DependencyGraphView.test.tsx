@@ -36,8 +36,32 @@ describe('DependencyGraphView Inferred Edges and Resilience', () => {
 
     render(<DependencyGraphView graph={graphWithoutEdges} primaryRootCauseService="postgres-db" />);
 
-    // Must NOT say 0 Edges! Must synthesize inferred topology edges from Gateway -> Service -> Backends
     expect(screen.getByText(/Inferred Topology/)).toBeDefined();
     expect(screen.getByText(/4 Services • [1-9] Edges/)).toBeDefined();
+    expect(screen.getByText(/Inferred Architectural Flow:/)).toBeDefined();
+    expect(screen.getByText(/Inferred Flow/)).toBeDefined();
+    expect(screen.getByText(/Observed Trace/)).toBeDefined();
+  });
+
+  it('clearly distinguishes inferred edges when inferredTopology is true from backend', () => {
+    const graphInferred: DependencyGraph = {
+      nodes: [
+        { id: 'api-gateway', name: 'api-gateway', tier: 'GATEWAY', status: 'DEGRADED', anomalyScore: 0.4, isRootCause: false, incomingErrors: 0 },
+        { id: 'postgres-db', name: 'postgres-db', tier: 'DATABASE', status: 'FAILING', anomalyScore: 0.95, isRootCause: true, incomingErrors: 4 }
+      ],
+      edges: [
+        { from: 'api-gateway', to: 'postgres-db', status: 'NORMAL', errorRate: 0.0, latencyMs: 50.0, isCriticalPath: false, isInferred: true }
+      ],
+      inferredTopology: true
+    };
+
+    const { container } = render(<DependencyGraphView graph={graphInferred} primaryRootCauseService="postgres-db" />);
+
+    expect(screen.getByText(/Inferred Topology/)).toBeDefined();
+    expect(screen.getByText(/Inferred Architectural Flow:/)).toBeDefined();
+
+    // Check SVG paths have stroke-dasharray attribute for inferred edge
+    const paths = container.querySelectorAll('path[stroke-dasharray="4 4"]');
+    expect(paths.length).toBeGreaterThan(0);
   });
 });

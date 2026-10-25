@@ -1,0 +1,8 @@
+timestamp,service,cpu_percent,latency_ms,error_rate,active_connections,pool_utilization,metric_name,observed_value,expected_baseline,unit
+2026-10-25T10:00:00Z,postgres-db,42,18,0.2,35,35,CONNECTION_POOL_UTILIZATION,35.0,25.0,connections
+2026-10-25T10:01:00Z,postgres-db,58,65,2.5,78,78,CONNECTION_POOL_UTILIZATION,78.0,25.0,connections
+2026-10-25T10:02:00Z,postgres-db,74,240,12.0,100,100,CONNECTION_POOL_EXHAUSTION,100.0,25.0,connections
+2026-10-25T10:02:00Z,order-service,61,1800,18.0,48,96,ERROR_RATE_SURGE,18.0,0.5,percent
+2026-10-25T10:02:00Z,payment-service,52,1450,9.0,44,88,ERROR_RATE_SURGE,9.0,0.5,percent
+2026-10-25T10:03:00Z,api-gateway,45,2100,24.0,160,80,HTTP_5XX_RATE,24.0,1.0,percent
+2026-10-25T10:04:00Z,postgres-db,76,320,15.0,100,100,CONNECTION_POOL_EXHAUSTION,100.0,25.0,connections

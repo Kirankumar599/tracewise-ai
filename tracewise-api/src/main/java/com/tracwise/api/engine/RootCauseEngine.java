@@ -110,6 +110,15 @@ public class RootCauseEngine {
         for (AnomalyRecord a : anomalies) {
             firstAnomalyTime.merge(a.service(), a.timestamp(), (oldT, newT) -> newT.isBefore(oldT) ? newT : oldT);
         }
+        for (ServiceMetric m : services) {
+            boolean isDegraded = (m.connectionPoolLimit() > 0 && (double) m.activeConnections() / m.connectionPoolLimit() >= 0.85)
+                    || m.cpuPercent() >= 75.0
+                    || m.errorRate() >= 0.05
+                    || m.latencyMs() >= 400.0;
+            if (isDegraded) {
+                firstAnomalyTime.merge(m.name(), m.timestamp(), (oldT, newT) -> newT.isBefore(oldT) ? newT : oldT);
+            }
+        }
         for (LogEvent l : logs) {
             if ("ERROR".equalsIgnoreCase(l.level()) || "FATAL".equalsIgnoreCase(l.level())) {
                 firstErrorLogTime.merge(l.service(), l.timestamp(), (oldT, newT) -> newT.isBefore(oldT) ? newT : oldT);
@@ -427,14 +436,22 @@ if (candidates.isEmpty()) {
             || !allServicesHealthy;
 
     if (hasIncidentSignals) {
+        String suspected = "system";
+        if (!allServiceNames.isEmpty()) {
+            suspected = healthMap.values().stream()
+                    .filter(h -> !"HEALTHY".equals(h.status()))
+                    .max(Comparator.comparingDouble(ServiceHealthSummary::peakErrorRate)
+                            .thenComparingDouble(ServiceHealthSummary::peakLatencyMs))
+                    .map(ServiceHealthSummary::serviceName)
+                    .orElse("system");
+        }
+
         candidates.add(new RootCauseHypothesis(
                 1,
                 "HYP-1",
                 "Transient Distributed Intermittent Latency",
                 "TRANSIENT_DEGRADATION",
-                allServiceNames.isEmpty()
-                        ? "system"
-                        : allServiceNames.iterator().next(),
+                suspected,
                 45.0,
                 "LOW_CONFIDENCE",
                 List.of(new EvidenceItem(
@@ -605,8 +622,10 @@ if (candidates.isEmpty()) {
             ));
         }
 
+        boolean inferredTopology = false;
         // Synthesize fallback architectural topology when source telemetry omitted explicit trace dependencies
         if (edges.isEmpty() && nodes.size() > 1) {
+            inferredTopology = true;
             List<GraphNode> gatewayNodes = nodes.stream().filter(n -> "GATEWAY".equals(n.tier())).toList();
             List<GraphNode> appServiceNodes = nodes.stream().filter(n -> "SERVICE".equals(n.tier())).toList();
             List<GraphNode> backendNodes = nodes.stream().filter(n -> "DATABASE".equals(n.tier()) || "CACHE".equals(n.tier()) || "EXTERNAL".equals(n.tier())).toList();
@@ -614,18 +633,18 @@ if (candidates.isEmpty()) {
             for (GraphNode gw : gatewayNodes) {
                 for (GraphNode svc : appServiceNodes) {
                     boolean isCrit = svc.id().equalsIgnoreCase(topSuspect);
-                    edges.add(new GraphEdge(gw.id(), svc.id(), isCrit ? "DEGRADED" : "NORMAL", isCrit ? 12.0 : 0.0, isCrit ? 600.0 : 45.0, isCrit));
+                    edges.add(new GraphEdge(gw.id(), svc.id(), isCrit ? "DEGRADED" : "NORMAL", isCrit ? 12.0 : 0.0, isCrit ? 600.0 : 45.0, isCrit, true));
                 }
             }
             for (GraphNode svc : appServiceNodes) {
                 for (GraphNode backend : backendNodes) {
                     boolean isCrit = backend.id().equalsIgnoreCase(topSuspect) || svc.id().equalsIgnoreCase(topSuspect);
-                    edges.add(new GraphEdge(svc.id(), backend.id(), isCrit ? "BLOCKED" : "NORMAL", isCrit ? 28.0 : 0.0, isCrit ? 1400.0 : 50.0, isCrit));
+                    edges.add(new GraphEdge(svc.id(), backend.id(), isCrit ? "BLOCKED" : "NORMAL", isCrit ? 28.0 : 0.0, isCrit ? 1400.0 : 50.0, isCrit, true));
                 }
             }
             if (edges.isEmpty()) {
                 for (int i = 0; i < nodes.size() - 1; i++) {
-                    edges.add(new GraphEdge(nodes.get(i).id(), nodes.get(i + 1).id(), "NORMAL", 0.0, 50.0, false));
+                    edges.add(new GraphEdge(nodes.get(i).id(), nodes.get(i + 1).id(), "NORMAL", 0.0, 50.0, false, true));
                 }
             }
         }
@@ -688,7 +707,7 @@ if (candidates.isEmpty()) {
 
         return new EngineAnalysisResult(
                 summary,
-                new DependencyGraph(nodes, edges),
+                new DependencyGraph(nodes, edges, inferredTopology),
                 ranked,
                 timeline,
                 new ArrayList<>(healthMap.values()),

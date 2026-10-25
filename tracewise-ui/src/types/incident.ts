@@ -89,11 +89,13 @@ export interface GraphEdge {
   errorRate: number;
   latencyMs: number;
   isCriticalPath: boolean;
+  isInferred?: boolean;
 }
 
 export interface DependencyGraph {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  inferredTopology?: boolean;
 }
 
 export interface EvidenceItem {

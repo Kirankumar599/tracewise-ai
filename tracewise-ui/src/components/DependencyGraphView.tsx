@@ -8,7 +8,8 @@ import {
   Database,
   Globe,
   Radio,
-  Layers
+  Layers,
+  Info
 } from 'lucide-react';
 
 interface DependencyGraphViewProps {
@@ -87,9 +88,13 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
   // Derive inferred edges if telemetry or upload contained no explicit dependency edges
   const rawEdges = graph.edges || [];
   let effectiveEdges = [...rawEdges];
-  const hasInferredEdges = effectiveEdges.length === 0 && graph.nodes.length > 1;
+  const hasInferredEdges = Boolean(
+    graph.inferredTopology ||
+    rawEdges.some(e => e.isInferred) ||
+    (effectiveEdges.length === 0 && graph.nodes.length > 1)
+  );
 
-  if (hasInferredEdges) {
+  if (effectiveEdges.length === 0 && graph.nodes.length > 1) {
     const gateways = graph.nodes.filter(n => n.tier === 'GATEWAY');
     const services = graph.nodes.filter(n => n.tier === 'SERVICE');
     const backends = graph.nodes.filter(n => ['DATABASE', 'CACHE', 'EXTERNAL'].includes(n.tier));
@@ -102,7 +107,8 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
           status: svc.status === 'FAILING' ? 'BLOCKED' : 'NORMAL',
           errorRate: svc.status === 'FAILING' ? 18.0 : 0.0,
           latencyMs: svc.status === 'FAILING' ? 850.0 : 35.0,
-          isCriticalPath: svc.isRootCause
+          isCriticalPath: svc.isRootCause,
+          isInferred: true
         });
       });
     });
@@ -116,7 +122,8 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
           status: isCrit ? 'BLOCKED' : 'NORMAL',
           errorRate: isCrit ? 28.0 : 0.0,
           latencyMs: isCrit ? 1400.0 : 40.0,
-          isCriticalPath: isCrit
+          isCriticalPath: isCrit,
+          isInferred: true
         });
       });
     });
@@ -129,7 +136,8 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
           status: 'NORMAL',
           errorRate: 0.0,
           latencyMs: 45.0,
-          isCriticalPath: false
+          isCriticalPath: false,
+          isInferred: true
         });
       }
     }
@@ -188,16 +196,22 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
             <span>Service Dependency Impact Graph</span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-midnight-800 text-slate-400 font-mono">
               {graph.nodes.length} Services • {effectiveEdges.length} Edges
-              {hasInferredEdges && <span className="ml-1.5 text-brand-cyan font-sans text-[10px] bg-brand-cyan/10 px-1.5 py-0.5 rounded border border-brand-cyan/20">Inferred Topology</span>}
+              {hasInferredEdges && (
+                <span className="ml-1.5 text-brand-cyan font-sans text-[10px] bg-brand-cyan/10 px-1.5 py-0.5 rounded border border-brand-cyan/20">
+                  Inferred Topology
+                </span>
+              )}
             </span>
           </h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Topology propagation direction showing cascading degradation from initiating failure to downstream callers
+            {hasInferredEdges
+              ? "Inferred architectural tier hierarchy. Telemetry data lacks explicit distributed trace dependencies."
+              : "Topology propagation direction showing cascading degradation from initiating failure to downstream callers"}
           </p>
         </div>
 
         {/* Legend */}
-        <div className="flex items-center gap-3 text-xs text-slate-300">
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-brand-rose shadow-sm shadow-brand-rose/50" />
             <span>Root Cause / Critical</span>
@@ -210,8 +224,26 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
             <span className="w-2.5 h-2.5 rounded-full bg-brand-emerald" />
             <span>Healthy</span>
           </div>
+          <div className="flex items-center gap-1.5 text-slate-400 pl-2 border-l border-midnight-700">
+            <span className="w-4 h-0.5 bg-slate-400 inline-block" />
+            <span>Observed Trace</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-brand-cyan/80">
+            <span className="w-4 h-0 border-t-2 border-dashed border-brand-cyan inline-block" />
+            <span>Inferred Flow</span>
+          </div>
         </div>
       </div>
+
+      {/* Inferred Topology Disclaimer Banner */}
+      {hasInferredEdges && (
+        <div className="px-6 py-2 bg-brand-cyan/5 border-b border-brand-cyan/20 flex items-center gap-2 text-xs text-brand-cyan/90">
+          <Info className="w-4 h-4 text-brand-cyan shrink-0" />
+          <span>
+            <strong>Inferred Architectural Flow:</strong> Telemetry lacks distributed trace dependencies; displaying synthesized tier flow without asserting observed causal traces.
+          </span>
+        </div>
+      )}
 
       {/* SVG Canvas */}
       <div className="relative p-4 overflow-x-auto flex justify-center bg-grid-pattern">
@@ -272,8 +304,14 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
 
             const isCritical = edge.isCriticalPath || edge.status === 'BLOCKED';
             const isDegraded = edge.status === 'DEGRADED';
+            const isInferred = Boolean(edge.isInferred || hasInferredEdges);
             const marker = isCritical ? 'url(#arrow-critical)' : isDegraded ? 'url(#arrow-degraded)' : 'url(#arrow-normal)';
             const strokeColor = isCritical ? '#EF4444' : isDegraded ? '#F59E0B' : '#334155';
+
+            // Distinct dashed stroke for inferred architectural edges
+            const strokeDash = isInferred
+              ? (isCritical ? "6 3" : "4 4")
+              : (isCritical ? "6 3" : undefined);
 
             // Curved cubic bezier line
             const dx = toPos.x - fromPos.x;
@@ -290,16 +328,16 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
                   fill="none"
                   stroke={strokeColor}
                   strokeWidth={isCritical ? "2.5" : "1.5"}
-                  strokeDasharray={isCritical ? "6 3" : undefined}
+                  strokeDasharray={strokeDash}
                   className={isCritical ? "animate-pulse" : ""}
                   markerEnd={marker}
                 />
                 {/* Edge Label on hover or if degraded */}
                 {(isCritical || isDegraded) && (
                   <rect
-                    x={(fromPos.x + toPos.x) / 2 - 25}
+                    x={(fromPos.x + toPos.x) / 2 - (isInferred ? 44 : 25)}
                     y={(fromPos.y + toPos.y) / 2 - 10}
-                    width="50"
+                    width={isInferred ? "88" : "50"}
                     height="18"
                     rx="4"
                     fill="#0B0F19"
@@ -316,7 +354,7 @@ export const DependencyGraphView: React.FC<DependencyGraphViewProps> = ({
                     fontSize="9"
                     fontFamily="monospace"
                   >
-                    {edge.latencyMs.toFixed(0)}ms
+                    {edge.latencyMs.toFixed(0)}ms{isInferred ? ' (inferred)' : ''}
                   </text>
                 )}
               </g>

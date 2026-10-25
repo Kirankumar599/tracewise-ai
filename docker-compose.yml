@@ -1,0 +1,51 @@
+services:
+  tracewise-ml:
+    build:
+      context: ./tracewise-ml
+      dockerfile: Dockerfile
+    container_name: tracewise-ml
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  tracewise-api:
+    build:
+      context: ./tracewise-api
+      dockerfile: Dockerfile
+    container_name: tracewise-api
+    ports:
+      - "8081:8081"
+    environment:
+      - PORT=8081
+      - ML_SERVICE_URL=http://tracewise-ml:8000
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173
+    depends_on:
+      tracewise-ml:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  tracewise-ui:
+    build:
+      context: ./tracewise-ui
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://localhost:8081
+    container_name: tracewise-ui
+    ports:
+      - "5173:80"
+    depends_on:
+      tracewise-api:
+        condition: service_healthy
+    restart: unless-stopped

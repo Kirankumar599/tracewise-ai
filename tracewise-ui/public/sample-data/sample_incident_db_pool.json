@@ -1,0 +1,68 @@
+{
+  "incidentId": "INC-UPLOAD-DB-001",
+  "services": [
+    {
+      "name": "postgres-db",
+      "timestamp": "2026-10-24T10:00:00",
+      "cpuPercent": 18.0,
+      "latencyMs": 12.0,
+      "errorRate": 0.001,
+      "activeConnections": 24,
+      "connectionPoolLimit": 100
+    },
+    {
+      "name": "order-service",
+      "timestamp": "2026-10-24T10:00:00",
+      "cpuPercent": 22.0,
+      "latencyMs": 45.0,
+      "errorRate": 0.002,
+      "activeConnections": 10,
+      "connectionPoolLimit": 50
+    },
+    {
+      "name": "postgres-db",
+      "timestamp": "2026-10-24T10:02:00",
+      "cpuPercent": 68.0,
+      "latencyMs": 350.0,
+      "errorRate": 0.15,
+      "activeConnections": 100,
+      "connectionPoolLimit": 100
+    },
+    {
+      "name": "order-service",
+      "timestamp": "2026-10-24T10:02:00",
+      "cpuPercent": 55.0,
+      "latencyMs": 2800.0,
+      "errorRate": 0.28,
+      "activeConnections": 50,
+      "connectionPoolLimit": 50
+    }
+  ],
+  "logs": [
+    {
+      "timestamp": "2026-10-24T10:02:00",
+      "service": "postgres-db",
+      "level": "ERROR",
+      "message": "HikariPool-1 - Connection pool exhausted! 100/100 active connections in use."
+    },
+    {
+      "timestamp": "2026-10-24T10:02:15",
+      "service": "order-service",
+      "level": "ERROR",
+      "message": "Connection acquisition timeout (30000ms) waiting for postgres-db"
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "order-service",
+      "to": "postgres-db"
+    }
+  ],
+  "recentChanges": [
+    {
+      "timestamp": "2026-10-24T09:48:00",
+      "service": "postgres-db",
+      "description": "Migration: Alter table billing_invoices"
+    }
+  ]
+}

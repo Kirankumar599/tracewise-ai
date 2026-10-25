@@ -1,0 +1,51 @@
+{
+  "model_version": "isolation-forest-v1.0",
+  "algorithm": "sklearn.ensemble.IsolationForest",
+  "n_estimators": 120,
+  "contamination": 0.03,
+  "features": [
+    "cpu_percent",
+    "latency_ms",
+    "error_rate",
+    "active_connections",
+    "pool_utilization"
+  ],
+  "baseline_statistics": {
+    "cpu_percent": {
+      "mean": 21.85541595200496,
+      "std": 7.4824692709938825,
+      "p95": 34.12182188120183
+    },
+    "latency_ms": {
+      "mean": 46.50969054941481,
+      "std": 33.84418988406605,
+      "p95": 115.92231742827337
+    },
+    "error_rate": {
+      "mean": 0.0015241584758626013,
+      "std": 0.0015272671532762267,
+      "p95": 0.004500319072251662
+    },
+    "active_connections": {
+      "mean": 29.0574,
+      "std": 16.218344927348056,
+      "p95": 56.0
+    },
+    "pool_utilization": {
+      "mean": 0.249552,
+      "std": 0.047516742987844134,
+      "p95": 0.32
+    }
+  },
+  "validation_metrics": {
+    "precision": 0.9434,
+    "recall": 1.0,
+    "f1_score": 0.9709,
+    "true_positives": 400,
+    "false_positives": 24,
+    "false_negatives": 0,
+    "true_negatives": 976,
+    "total_test_samples": 1400
+  },
+  "score_semantics": "Continuous decision function offset. Not calibrated probability of failure."
+}

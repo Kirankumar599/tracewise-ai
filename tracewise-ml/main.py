@@ -62,6 +62,10 @@ class ServiceMetricItem(BaseModel):
     errorRate: float = Field(default=0.0, ge=0.0)
     activeConnections: int = Field(default=5, ge=0)
     connectionPoolLimit: int = Field(default=100, ge=0)
+    metricName: Optional[str] = None
+    observedValue: Optional[float] = None
+    expectedBaseline: Optional[float] = None
+    unit: Optional[str] = None
 
 class AnomalyDetectionRequest(BaseModel):
     metrics: List[ServiceMetricItem]
@@ -146,7 +150,14 @@ def detect_anomalies(request: AnomalyDetectionRequest):
         row = df.iloc[idx]
         is_saturated = row["pool_utilization"] >= 0.85 or row["cpu_percent"] >= 80.0 or row["error_rate"] >= 0.08 or row["latency_ms"] >= 400.0
 
-        if is_anom == -1 or is_saturated:
+        is_nominal_envelope = (
+            row["latency_ms"] < 250.0
+            and row["cpu_percent"] < 50.0
+            and row["error_rate"] < 0.02
+            and row["pool_utilization"] < 0.70
+        )
+
+        if is_saturated or (is_anom == -1 and not is_nominal_envelope):
             # Normalize decision score into [0.50, 0.99]
             norm_score = float(np.clip(0.60 + (-dec_score) * 2.0, 0.50, 0.98))
 

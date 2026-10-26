@@ -1,0 +1,8 @@
+timestamp,service,cpu_percent,latency_ms,error_rate,active_connections,pool_utilization,metric_name,observed_value,expected_baseline,unit
+2026-10-25T14:00:00,api-gateway,24,110,0.2,12,12,CPU_UTILIZATION,24.0,30.0,%
+2026-10-25T14:00:00,order-service,31,180,0.4,15,30,CPU_UTILIZATION,31.0,35.0,%
+2026-10-25T14:01:00,payment-service,28,160,0.3,14,28,LATENCY,160.0,200.0,ms
+2026-10-25T14:01:00,postgres-db,35,140,0.2,35,35,CONNECTION_POOL,35.0,100.0,connections
+2026-10-25T14:02:00,api-gateway,26,120,0.2,13,13,LATENCY,120.0,130.0,ms
+2026-10-25T14:02:00,order-service,30,190,0.5,16,32,ERROR_RATE,0.5,1.0,%
+2026-10-25T14:03:00,payment-service,29,170,0.4,15,30,LATENCY,170.0,200.0,ms

@@ -77,19 +77,34 @@ public class RootCauseEngine {
             int maxConns = sMetrics.stream().mapToInt(ServiceMetric::activeConnections).max().orElse(0);
             int poolLimit = sMetrics.stream().mapToInt(ServiceMetric::connectionPoolLimit).max().orElse(0);
 
+            double peakMemory = sMetrics.stream()
+                    .filter(m -> m.metricName() != null && (m.metricName().toUpperCase().contains("MEMORY") || m.metricName().toUpperCase().contains("HEAP")))
+                    .filter(m -> m.observedValue() != null)
+                    .mapToDouble(ServiceMetric::observedValue)
+                    .max().orElse(0.0);
+
             long errorLogCount = logs.stream()
                     .filter(l -> l.service().equalsIgnoreCase(sName))
                     .filter(l -> "ERROR".equalsIgnoreCase(l.level()) || "FATAL".equalsIgnoreCase(l.level()) || "CRITICAL".equalsIgnoreCase(l.level()))
                     .count();
 
-            long serviceAnomCount = anomalies.stream()
+            List<AnomalyRecord> sAnoms = anomalies.stream()
                     .filter(a -> a.service().equalsIgnoreCase(sName))
-                    .count();
+                    .toList();
+            long serviceAnomCount = sAnoms.size();
+            boolean hasCriticalAnomaly = sAnoms.stream().anyMatch(a ->
+                    "CRITICAL".equalsIgnoreCase(a.severity()) || a.anomalyScore() >= 0.85);
+
+            boolean hasMetricDegradation = peakError >= 0.05
+                    || peakLatency >= 400.0
+                    || peakCpu >= 75.0
+                    || (poolLimit > 0 && (double) maxConns / poolLimit >= 0.85)
+                    || peakMemory >= 80.0;
 
             String status = "HEALTHY";
-            if (peakError >= 0.20 || (poolLimit > 0 && (double) maxConns / poolLimit >= 0.90) || peakCpu >= 90.0) {
+            if (peakError >= 0.20 || (poolLimit > 0 && (double) maxConns / poolLimit >= 0.90) || peakCpu >= 90.0 || peakMemory >= 95.0) {
                 status = "FAILING";
-            } else if (peakError >= 0.05 || peakLatency >= 400.0 || peakCpu >= 75.0 || serviceAnomCount > 0) {
+            } else if (hasMetricDegradation || hasCriticalAnomaly || (serviceAnomCount > 1 && (peakLatency >= 250.0 || peakError >= 0.02 || peakCpu >= 60.0 || errorLogCount > 0))) {
                 status = "DEGRADED";
             }
 
@@ -108,13 +123,18 @@ public class RootCauseEngine {
 
         // Determine earliest onset
         for (AnomalyRecord a : anomalies) {
-            firstAnomalyTime.merge(a.service(), a.timestamp(), (oldT, newT) -> newT.isBefore(oldT) ? newT : oldT);
+            if ("CRITICAL".equalsIgnoreCase(a.severity()) || a.anomalyScore() >= 0.80) {
+                firstAnomalyTime.merge(a.service(), a.timestamp(), (oldT, newT) -> newT.isBefore(oldT) ? newT : oldT);
+            }
         }
         for (ServiceMetric m : services) {
             boolean isDegraded = (m.connectionPoolLimit() > 0 && (double) m.activeConnections() / m.connectionPoolLimit() >= 0.85)
                     || m.cpuPercent() >= 75.0
                     || m.errorRate() >= 0.05
-                    || m.latencyMs() >= 400.0;
+                    || m.latencyMs() >= 400.0
+                    || (m.observedValue() != null && m.metricName() != null
+                        && (m.metricName().toUpperCase().contains("MEMORY") || m.metricName().toUpperCase().contains("HEAP"))
+                        && m.observedValue() >= 80.0);
             if (isDegraded) {
                 firstAnomalyTime.merge(m.name(), m.timestamp(), (oldT, newT) -> newT.isBefore(oldT) ? newT : oldT);
             }
@@ -146,6 +166,7 @@ public class RootCauseEngine {
 
         for (String sName : allServiceNames) {
             ServiceHealthSummary health = healthMap.get(sName);
+            List<ServiceMetric> sMetrics = metricsByService.getOrDefault(sName, Collections.emptyList());
             Set<String> dependents = incomingDeps.getOrDefault(sName, Collections.emptySet());
             String lower = sName.toLowerCase();
             boolean isDatabaseTier = lower.contains("db") || lower.contains("postgres") || lower.contains("sql") || lower.contains("mongo");
@@ -249,10 +270,59 @@ public class RootCauseEngine {
                         return msg.contains("outofmemory") || msg.contains("heap space") || msg.contains("memory leak");
                     });
 
-            if (health.peakCpuPercent() >= 75.0 || hasOomLogs) {
+            List<ServiceMetric> sMemMetrics = sMetrics.stream()
+                    .filter(m -> m.metricName() != null && (m.metricName().toUpperCase().contains("MEMORY") || m.metricName().toUpperCase().contains("HEAP")))
+                    .filter(m -> m.observedValue() != null)
+                    .sorted(Comparator.comparing(ServiceMetric::timestamp))
+                    .toList();
+
+            double peakMemVal = sMemMetrics.stream().mapToDouble(ServiceMetric::observedValue).max().orElse(0.0);
+            double firstMemVal = sMemMetrics.isEmpty() ? 0.0 : sMemMetrics.get(0).observedValue();
+
+            boolean isMonotonicallyIncreasing = false;
+            if (sMemMetrics.size() >= 2) {
+                boolean inc = true;
+                for (int i = 0; i < sMemMetrics.size() - 1; i++) {
+                    if (sMemMetrics.get(i + 1).observedValue() < sMemMetrics.get(i).observedValue() - 0.001) {
+                        inc = false;
+                        break;
+                    }
+                }
+                isMonotonicallyIncreasing = inc;
+            }
+
+            // Distinguish progressive memory leak from static memory pressure
+            boolean isProgressiveLeak = isMonotonicallyIncreasing
+                    && (peakMemVal - firstMemVal >= 15.0)
+                    && peakMemVal >= 85.0
+                    && sMemMetrics.size() >= 2;
+
+            boolean isMemoryPressure = !isProgressiveLeak && (peakMemVal >= 80.0
+                    || sMemMetrics.stream().anyMatch(m -> m.expectedBaseline() != null && m.observedValue() - m.expectedBaseline() >= 30.0));
+
+            if (health.peakCpuPercent() >= 75.0 || hasOomLogs || isProgressiveLeak || isMemoryPressure) {
                 List<EvidenceItem> supporting = new ArrayList<>();
                 List<EvidenceItem> contradicting = new ArrayList<>();
                 double score = 40.0;
+
+                if (isProgressiveLeak) {
+                    score += 30.0;
+                    supporting.add(new EvidenceItem(
+                            "MEMORY_LEAK_PROGRESSION",
+                            String.format("Progressive monotonic memory growth across %d samples from %.1f%% to %.1f%% without GC reclamation",
+                                    sMemMetrics.size(), firstMemVal, peakMemVal),
+                            30.0,
+                            "Telemetry: " + sName
+                    ));
+                } else if (isMemoryPressure) {
+                    score += 20.0;
+                    supporting.add(new EvidenceItem(
+                            "MEMORY_PRESSURE",
+                            String.format("Memory utilization reached elevated peak of %.1f%%", peakMemVal),
+                            20.0,
+                            "Telemetry: " + sName
+                    ));
+                }
 
                 if (health.peakCpuPercent() >= 75.0) {
                     double cpuPoints = health.peakCpuPercent() >= 90.0 ? 30.0 : 18.0;
@@ -282,7 +352,7 @@ public class RootCauseEngine {
                         score += 20.0;
                         supporting.add(new EvidenceItem(
                                 "TEMPORAL_ORDER",
-                                String.format("Compute surge at %s aligns with initial failure onset", sOnset),
+                                String.format("Resource saturation onset at %s aligns with initial incident initiation", sOnset),
                                 20.0,
                                 "Timeline analysis"
                         ));
@@ -313,10 +383,17 @@ public class RootCauseEngine {
                 }
 
                 List<String> actions = new ArrayList<>();
-                if (hasOomLogs) {
+                if (isProgressiveLeak) {
+                    actions.add("Capture JVM heap dump (`jmap -dump:live,format=b,file=heap.hprof <pid>`) to identify memory leak roots");
+                    actions.add("Inspect memory allocation limits and GC telemetry (-XX:+PrintGCDetails / container cgroups memory limit)");
+                    actions.add("Restart worker container and apply rolling restart to clear heap fragmentation");
+                } else if (hasOomLogs) {
                     actions.add("Capture JVM heap dump (`jmap -dump:live,format=b,file=heap.hprof <pid>`) to identify leaking objects");
                     actions.add("Review memory allocation limits (-Xmx / container cgroups memory limit)");
                     actions.add("Scale container memory limit or restart worker process to clear heap fragmentation");
+                } else if (isMemoryPressure) {
+                    actions.add("Inspect memory utilization trends and evaluate memory limits (-Xmx / cgroups)");
+                    actions.add("Scale container memory or optimize cached object lifecycles");
                 }
                 if (health.peakCpuPercent() >= 75.0) {
                     actions.add("Capture a thread dump using `jstack <pid>` or `kubectl exec -it <pod> -- kill -3 1` to find thread locks or busy loops");
@@ -324,13 +401,24 @@ public class RootCauseEngine {
                     actions.add("Scale horizontal replicas (`kubectl scale deployment " + sName + " --replicas=+2`) to distribute compute load");
                 }
                 if (matchedChange.isPresent()) {
-                    actions.add("Roll back recent deployment if CPU degradation immediately succeeded release");
+                    actions.add("Roll back recent deployment if resource degradation immediately succeeded release");
                 }
 
-                String hypTitle = hasOomLogs ? "Memory Saturation & Heap Exhaustion on " + sName : "CPU Resource Saturation on " + sName;
-                String reasoning = hasOomLogs
-                        ? String.format("Service '%s' experienced JVM heap exhaustion and OutOfMemoryError, causing worker thread failure and severe caller degradation.", sName)
-                        : String.format("Service '%s' experienced sustained compute saturation (%.1f%% CPU), exhausting executor threads and throttling request processing.", sName, health.peakCpuPercent());
+                String hypTitle;
+                String reasoning;
+                if (isProgressiveLeak) {
+                    hypTitle = "Progressive Memory Leak & Heap Exhaustion on " + sName;
+                    reasoning = String.format("Service '%s' exhibited monotonic memory growth (%.1f%% to %.1f%%) without garbage collection reclamation, culminating in severe resource starvation and caller timeouts.", sName, firstMemVal, peakMemVal);
+                } else if (hasOomLogs) {
+                    hypTitle = "Memory Saturation & Heap Exhaustion on " + sName;
+                    reasoning = String.format("Service '%s' experienced JVM heap exhaustion and OutOfMemoryError, causing worker thread failure and severe caller degradation.", sName);
+                } else if (isMemoryPressure) {
+                    hypTitle = "Memory Resource Saturation on " + sName;
+                    reasoning = String.format("Service '%s' reached elevated memory saturation of %.1f%%, exceeding safe operating thresholds.", sName, peakMemVal);
+                } else {
+                    hypTitle = "CPU Resource Saturation on " + sName;
+                    reasoning = String.format("Service '%s' experienced sustained compute saturation (%.1f%% CPU), exhausting executor threads and throttling request processing.", sName, health.peakCpuPercent());
+                }
 
                 candidates.add(new RootCauseHypothesis(
                         0,
@@ -440,19 +528,22 @@ public class RootCauseEngine {
 
         // Fallback hypothesis if no specific threshold triggered
         // Fallback hypothesis only when incident signals exist.
-if (candidates.isEmpty()) {
-    boolean allServicesHealthy = healthMap.values().stream()
-            .allMatch(h -> "HEALTHY".equals(h.status()));
+        if (candidates.isEmpty()) {
+            boolean allServicesHealthy = healthMap.values().stream()
+                    .allMatch(h -> "HEALTHY".equals(h.status()));
 
-    boolean hasErrorLogs = logs.stream().anyMatch(l ->
-            "ERROR".equalsIgnoreCase(l.level())
-            || "FATAL".equalsIgnoreCase(l.level())
-            || "CRITICAL".equalsIgnoreCase(l.level()));
+            boolean hasErrorLogs = logs.stream().anyMatch(l ->
+                    "ERROR".equalsIgnoreCase(l.level())
+                    || "FATAL".equalsIgnoreCase(l.level())
+                    || "CRITICAL".equalsIgnoreCase(l.level()));
 
-    boolean hasIncidentSignals = !anomalies.isEmpty()
-            || hasErrorLogs
-            || !recentChanges.isEmpty()
-            || !allServicesHealthy;
+            boolean hasActionableAnomalies = anomalies.stream().anyMatch(a ->
+                    "CRITICAL".equalsIgnoreCase(a.severity()) || a.anomalyScore() >= 0.85);
+
+            boolean hasIncidentSignals = !allServicesHealthy
+                    || hasErrorLogs
+                    || !recentChanges.isEmpty()
+                    || hasActionableAnomalies;
 
     if (hasIncidentSignals) {
         String suspected = "system";

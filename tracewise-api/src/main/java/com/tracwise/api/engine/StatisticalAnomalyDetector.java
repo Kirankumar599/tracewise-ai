@@ -138,6 +138,34 @@ public class StatisticalAnomalyDetector {
                             detectionMethod
                     ));
                 }
+
+                // 5. Memory Saturation check
+                if (m.metricName() != null && (m.metricName().toUpperCase().contains("MEMORY") || m.metricName().toUpperCase().contains("HEAP"))
+                        && m.observedValue() != null && m.observedValue() >= 80.0) {
+                    double memVal = m.observedValue();
+                    double baseMem = m.expectedBaseline() != null ? m.expectedBaseline() : 45.0;
+                    double score = Math.min(1.0, 0.70 + ((memVal - 80.0) / 20.0) * 0.28);
+                    String severity = memVal >= 90.0 ? "CRITICAL" : "WARNING";
+                    Map<String, Double> contrib = new LinkedHashMap<>();
+                    contrib.put("memory_percent", memVal);
+                    contrib.put("baseline_memory", baseMem);
+
+                    anomalies.add(new AnomalyRecord(
+                            "ANOM-" + (anomalyCounter++),
+                            service,
+                            m.timestamp(),
+                            "MEMORY_SATURATION",
+                            Math.round(score * 100.0) / 100.0,
+                            severity,
+                            memVal,
+                            baseMem,
+                            m.unit() != null ? m.unit() : "%",
+                            String.format("Elevated memory utilization at %.1f%% (baseline: %.1f%%)",
+                                    memVal, baseMem),
+                            contrib,
+                            detectionMethod
+                    ));
+                }
             }
         }
 

@@ -80,6 +80,9 @@ public class TelemetryParser {
             int limitIdx = findColumnIndex(colIndex, "connectionpoollimit", "connection_pool_limit", "poollimit", "pool_limit", "maxconnections", "max_connections");
             int poolUtilIdx = findColumnIndex(colIndex, "poolutilization", "pool_utilization", "poolutil", "pool_util");
             int unitIdx = findColumnIndex(colIndex, "unit", "units");
+            int metricNameIdx = findColumnIndex(colIndex, "metricname", "metric_name", "metric");
+            int observedIdx = findColumnIndex(colIndex, "observedvalue", "observed_value", "value", "val");
+            int baselineIdx = findColumnIndex(colIndex, "expectedbaseline", "expected_baseline", "baseline", "expected");
 
             List<String[]> rawRows = new ArrayList<>();
             List<Integer> lineNumbers = new ArrayList<>();
@@ -159,7 +162,16 @@ public class TelemetryParser {
                     limit = conns;
                 }
 
-                metrics.add(new ServiceMetric(sName, timestamp, cpu, latency, error, conns, limit));
+                String metricName = metricNameIdx >= 0 && metricNameIdx < parts.length && !parts[metricNameIdx].trim().isEmpty()
+                        ? parts[metricNameIdx].trim() : null;
+                Double observedValue = observedIdx >= 0 && observedIdx < parts.length && !parts[observedIdx].trim().isEmpty()
+                        ? parseDoubleNullable(parts[observedIdx]) : null;
+                Double expectedBaseline = baselineIdx >= 0 && baselineIdx < parts.length && !parts[baselineIdx].trim().isEmpty()
+                        ? parseDoubleNullable(parts[baselineIdx]) : null;
+                String unit = unitIdx >= 0 && unitIdx < parts.length && !parts[unitIdx].trim().isEmpty()
+                        ? parts[unitIdx].trim() : null;
+
+                metrics.add(new ServiceMetric(sName, timestamp, cpu, latency, error, conns, limit, metricName, observedValue, expectedBaseline, unit));
             }
 
             return new IncidentRequest(
@@ -194,7 +206,24 @@ public class TelemetryParser {
                     node.has("connection_pool_limit") ? node.get("connection_pool_limit").asInt() :
                     node.path("poolLimit").asInt(100);
 
-        return new ServiceMetric(name, time, cpu, latency, error, conns, limit);
+        String metricName = node.has("metricName") ? node.get("metricName").asText() :
+                            node.has("metric_name") ? node.get("metric_name").asText() : null;
+        Double observedValue = node.has("observedValue") ? node.get("observedValue").asDouble() :
+                               node.has("observed_value") ? node.get("observed_value").asDouble() : null;
+        Double expectedBaseline = node.has("expectedBaseline") ? node.get("expectedBaseline").asDouble() :
+                                  node.has("expected_baseline") ? node.get("expected_baseline").asDouble() : null;
+        String unit = node.has("unit") ? node.get("unit").asText() : null;
+
+        return new ServiceMetric(name, time, cpu, latency, error, conns, limit, metricName, observedValue, expectedBaseline, unit);
+    }
+
+    private Double parseDoubleNullable(String str) {
+        if (str == null || str.trim().isEmpty()) return null;
+        try {
+            return Double.parseDouble(str.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private String normalizeHeader(String header) {

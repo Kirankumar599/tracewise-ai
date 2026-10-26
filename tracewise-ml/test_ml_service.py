@@ -53,7 +53,45 @@ def test_all():
         assert "feature_contributions" in anom
         print("[PASS] /api/v1/detect-anomalies passed")
 
-        # 3. Evaluate
+        # 3. Healthy Baseline (Nominal metrics should not produce false positive anomalies)
+        healthy_payload = {
+            "metrics": [
+                {
+                    "name": "api-gateway",
+                    "timestamp": "2026-10-24T10:00:00",
+                    "cpuPercent": 18.0,
+                    "latencyMs": 42.0,
+                    "errorRate": 0.001,
+                    "activeConnections": 12,
+                    "connectionPoolLimit": 100,
+                    "metricName": "LATENCY",
+                    "observedValue": 42.0,
+                    "expectedBaseline": 40.0,
+                    "unit": "ms"
+                },
+                {
+                    "name": "payment-service",
+                    "timestamp": "2026-10-24T10:00:00",
+                    "cpuPercent": 25.0,
+                    "latencyMs": 65.0,
+                    "errorRate": 0.002,
+                    "activeConnections": 15,
+                    "connectionPoolLimit": 100,
+                    "metricName": "CPU_UTILIZATION",
+                    "observedValue": 25.0,
+                    "expectedBaseline": 20.0,
+                    "unit": "%"
+                }
+            ]
+        }
+        resp = client.post("/api/v1/detect-anomalies", json=healthy_payload)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["status"] == "SUCCESS"
+        assert len(data["anomalies"]) == 0, f"Expected 0 anomalies for nominal metrics, got {len(data['anomalies'])}"
+        print("[PASS] Nominal metrics anomaly suppression passed")
+
+        # 4. Evaluate
         resp = client.get("/api/v1/evaluate")
         assert resp.status_code == 200, resp.text
         data = resp.json()

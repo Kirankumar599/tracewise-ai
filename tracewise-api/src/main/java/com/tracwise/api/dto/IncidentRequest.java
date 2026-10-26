@@ -41,8 +41,24 @@ public record IncidentRequest(
             @PositiveOrZero double latencyMs,
             @PositiveOrZero double errorRate,
             @PositiveOrZero int activeConnections,
-            @PositiveOrZero int connectionPoolLimit
-    ) {}
+            @PositiveOrZero int connectionPoolLimit,
+            String metricName,
+            Double observedValue,
+            Double expectedBaseline,
+            String unit
+    ) {
+        public ServiceMetric(
+                String name,
+                LocalDateTime timestamp,
+                double cpuPercent,
+                double latencyMs,
+                double errorRate,
+                int activeConnections,
+                int connectionPoolLimit
+        ) {
+            this(name, timestamp, cpuPercent, latencyMs, errorRate, activeConnections, connectionPoolLimit, null, null, null, null);
+        }
+    }
 
     public record LogEvent(
             @NotNull LocalDateTime timestamp,

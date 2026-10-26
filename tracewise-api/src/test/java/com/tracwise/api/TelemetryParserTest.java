@@ -210,5 +210,92 @@ public class TelemetryParserTest {
                 .anyMatch(e -> e.to().equals("external-payment-gateway"));
         assertTrue(hasIncomingToExternal, "Application services must connect to external provider");
     }
+
+    @Test
+    void testMemoryLeakCsvAnalysisIdentifiesPaymentServiceProgressiveLeak() throws Exception {
+        File csvFile = new File("../sample-data/02_memory_leak.csv");
+        if (!csvFile.exists()) {
+            csvFile = new File("sample-data/02_memory_leak.csv");
+        }
+        assertTrue(csvFile.exists(), "02_memory_leak.csv must exist in sample-data");
+
+        IncidentRequest request;
+        try (InputStream in = new FileInputStream(csvFile)) {
+            request = telemetryParser.parseCsv(in);
+        }
+
+        assertNotNull(request);
+        assertEquals(7, request.services().size(), "All 7 rows in 02_memory_leak.csv must be parsed");
+
+        // Verify structured metric fields are preserved
+        List<ServiceMetric> payMetrics = request.services().stream()
+                .filter(m -> m.name().equals("payment-service"))
+                .toList();
+        assertEquals(3, payMetrics.size());
+        assertEquals("MEMORY_UTILIZATION", payMetrics.get(0).metricName());
+        assertEquals(72.0, payMetrics.get(0).observedValue());
+        assertEquals(88.0, payMetrics.get(1).observedValue());
+        assertEquals(96.0, payMetrics.get(2).observedValue());
+        assertEquals("%", payMetrics.get(0).unit());
+
+        EngineAnalysisResult result = rootCauseEngine.analyze(
+                request.incidentId(),
+                request.services(),
+                request.logs(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        assertNotNull(result);
+        assertFalse(result.hypotheses().isEmpty(), "Must produce candidate hypothesis for memory leak");
+
+        // Primary root cause must be payment-service
+        assertEquals("payment-service", result.summary().primaryAffectedService());
+        var topHyp = result.hypotheses().get(0);
+        assertEquals("payment-service", topHyp.suspectedService());
+        assertEquals("RESOURCE_SATURATION", topHyp.rootCauseCategory());
+        assertEquals(90.0, topHyp.evidenceScore(), 0.01, "Memory leak score must be exactly 90.0%");
+        assertTrue(topHyp.title().toLowerCase().contains("memory"), "Hypothesis title must indicate memory exhaustion/leak");
+
+        // Verify supporting evidence contains progressive memory leak evidence
+        boolean hasLeakEvidence = topHyp.supportingEvidence().stream()
+                .anyMatch(e -> "MEMORY_LEAK_PROGRESSION".equals(e.type()));
+        assertTrue(hasLeakEvidence, "Must include MEMORY_LEAK_PROGRESSION supporting evidence");
+    }
+
+    @Test
+    void testHealthyBaselineCsvAnalysisProducesNoIncidentDetected() throws Exception {
+        File csvFile = new File("../sample-data/05_healthy_baseline.csv");
+        if (!csvFile.exists()) {
+            csvFile = new File("sample-data/05_healthy_baseline.csv");
+        }
+        assertTrue(csvFile.exists(), "05_healthy_baseline.csv must exist in sample-data");
+
+        IncidentRequest request;
+        try (InputStream in = new FileInputStream(csvFile)) {
+            request = telemetryParser.parseCsv(in);
+        }
+
+        assertNotNull(request);
+        assertEquals(7, request.services().size(), "All 7 rows in 05_healthy_baseline.csv must be parsed");
+
+        EngineAnalysisResult result = rootCauseEngine.analyze(
+                request.incidentId(),
+                request.services(),
+                request.logs(),
+                Collections.emptyList(),
+                Collections.emptyList(),
+                Collections.emptyList()
+        );
+
+        assertNotNull(result);
+        assertTrue(result.hypotheses().isEmpty(), "Healthy baseline must produce zero hypotheses");
+        assertEquals("NO_INCIDENT_DETECTED", result.summary().status());
+        assertEquals("NONE", result.summary().primaryRootCause());
+        assertEquals("NONE", result.summary().primaryAffectedService());
+        assertEquals(0, result.summary().blastRadiusPercent());
+        assertTrue(result.recommendedActions().isEmpty(), "Healthy baseline must produce no remediation actions");
+    }
 }
 
